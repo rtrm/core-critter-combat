@@ -1217,9 +1217,74 @@ CreatureAI* GetAI_custom_summon_debug(Creature *creature)
     return new npc_summon_debugAI(creature);
 }
 
+// CRITTER COMBAT (critter-combat repo's ARCHITECTURE.md): the stable master's new, separate
+// "Learn Critter Combat" option, alongside its existing stable/vendor services (those are
+// npcflag-driven icon buttons the client shows on its own - untouched by this text-gossip hook).
+// Pilot NPC only (Erma, Stormwind, entry 6749); bulk rollout to the other 90 stable masters is a
+// later, separate migration once this is verified live.
+
+#define GOSSIP_CRITTER_COMBAT_MAIN     (GOSSIP_ACTION_INFO_DEF + 500)
+#define GOSSIP_CRITTER_COMBAT_ENGAGE   (GOSSIP_ACTION_INFO_DEF + 501)
+#define GOSSIP_CRITTER_COMBAT_CAPTURE  (GOSSIP_ACTION_INFO_DEF + 502)
+
+// Placeholder ids/costs (ARCHITECTURE.md: real names and balance come later).
+#define SPELL_ENGAGE_CRITTER_COMBAT  64000
+#define SPELL_CAPTURE_CRITTER        64001
+#define COST_ENGAGE_CRITTER_COMBAT   500   // 5 silver
+#define COST_CAPTURE_CRITTER         2000  // 20 silver
+
+static void TryLearnCritterCombatSpell(Player* pPlayer, uint32 spellId, uint32 costCopper, char const* label)
+{
+    if (pPlayer->HasSpell(spellId))
+        pPlayer->GetSession()->SendNotification("You already know %s.", label);
+    else if (pPlayer->GetMoney() < costCopper)
+        pPlayer->GetSession()->SendNotification("You don't have enough money to learn %s.", label);
+    else
+    {
+        pPlayer->ModifyMoney(-(int32)costCopper);
+        pPlayer->LearnSpell(spellId, false);
+        pPlayer->GetSession()->SendNotification("You have learned %s.", label);
+    }
+}
+
+bool GossipHello_critter_combat_stablemaster(Player* pPlayer, Creature* pCreature)
+{
+    pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Critter Combat", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_MAIN);
+    pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pCreature), pCreature->GetObjectGuid());
+    return true;
+}
+
+bool GossipSelect_critter_combat_stablemaster(Player* pPlayer, Creature* pCreature, uint32 /*uiSender*/, uint32 uiAction)
+{
+    if (uiAction == GOSSIP_CRITTER_COMBAT_MAIN)
+    {
+        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Engage Critter Combat - 5 silver", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_ENGAGE);
+        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Capture - 20 silver", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_CAPTURE);
+        pPlayer->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, pCreature->GetObjectGuid());
+    }
+    else if (uiAction == GOSSIP_CRITTER_COMBAT_ENGAGE)
+    {
+        TryLearnCritterCombatSpell(pPlayer, SPELL_ENGAGE_CRITTER_COMBAT, COST_ENGAGE_CRITTER_COMBAT, "Engage Critter Combat");
+        pPlayer->CLOSE_GOSSIP_MENU();
+    }
+    else if (uiAction == GOSSIP_CRITTER_COMBAT_CAPTURE)
+    {
+        TryLearnCritterCombatSpell(pPlayer, SPELL_CAPTURE_CRITTER, COST_CAPTURE_CRITTER, "Capture");
+        pPlayer->CLOSE_GOSSIP_MENU();
+    }
+
+    return true;
+}
+
 void AddSC_custom_creatures()
 {
     Script* newscript;
+
+    newscript = new Script;
+    newscript->Name = "critter_combat_stablemaster";
+    newscript->pGossipHello = &GossipHello_critter_combat_stablemaster;
+    newscript->pGossipSelect = &GossipSelect_critter_combat_stablemaster;
+    newscript->RegisterSelf(false);
 
     newscript = new Script;
     newscript->Name = "custom_teleport_npc";

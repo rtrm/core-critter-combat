@@ -150,7 +150,13 @@ void WorldPackets::Query::CreatureQueryResponse::AppendBodyTo(ByteBuffer& buffer
     buffer << ""; // name4
     buffer << *subName;
 #if SUPPORTED_CLIENT_BUILD > CLIENT_BUILD_1_10_2
-    buffer << creatureInfo->GetTypeFlags();
+    // Critter Combat (ARCHITECTURE.md): the battleable bit isn't a creature_template column, it's
+    // membership in `pet_battle_wild` - computed here rather than in GetTypeFlags() itself to keep
+    // that pure template-data accessor free of an ObjectMgr include cycle.
+    uint32 typeFlags = creatureInfo->GetTypeFlags();
+    if (sObjectMgr.IsPetBattleWild(creatureInfo->entry))
+        typeFlags |= CREATURE_TYPEFLAGS_BATTLEABLE;
+    buffer << typeFlags;
 #else
     buffer << creatureInfo->static_flags1;
 #endif

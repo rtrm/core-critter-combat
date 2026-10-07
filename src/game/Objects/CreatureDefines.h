@@ -150,6 +150,13 @@ enum CreatureTypeFlags
     CREATURE_TYPEFLAGS_NO_FACTION_TOOLTIP         = 0x00000010, // Derived from CREATURE_STATIC_FLAG_NO_FACTION_TOOLTIP (0x01000000)
     CREATURE_TYPEFLAGS_MORE_AUDIBLE               = 0x00000020, // Derived from CREATURE_STATIC_FLAG_MORE_AUDIBLE (0x40000000)
     CREATURE_TYPEFLAGS_NO_HARMFUL_VERTEX_COLORING = 0x00000040, // Derived from CREATURE_STATIC_FLAG_2_NO_HARMFUL_VERTEX_COLORING (0x00000008)
+
+    // Critter Combat (ARCHITECTURE.md): not derived from any static flag - this bit is new to this
+    // fork, set at the SMSG_CREATURE_QUERY_RESPONSE send site (Query.cpp) from `pet_battle_wild`,
+    // not from `GetTypeFlags()` below, to avoid a Game/ObjectMgr include cycle from this header.
+    // 0x80 is already reference-documented as CanInteractWhileDead (benilla client's names.rs) even
+    // though unimplemented there today, so this starts one bit higher to stay clear of it entirely.
+    CREATURE_TYPEFLAGS_BATTLEABLE                 = 0x00000100,
 };
 
 enum CreatureFlagsExtra

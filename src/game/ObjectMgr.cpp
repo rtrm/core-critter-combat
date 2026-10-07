@@ -11615,6 +11615,118 @@ void ObjectMgr::RemoveGraveYardLink(uint32 id, uint32 zoneId, Team team, bool in
         WorldDatabase.PExecute("DELETE FROM `game_graveyard_zone` WHERE `id` = '%u' AND `ghost_zone` = '%u' AND `faction` = '%u'", id, zoneId, team);
 }
 
+void ObjectMgr::LoadPetBattleAbilities()
+{
+    m_PetBattleAbilities.clear();
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `name`, `effect_type`, `base_value`, `value_per_level` FROM `pet_battle_ability`"));
+
+    if (!result)
+    {
+        BarGoLink bar(1);
+        bar.step();
+
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 pet battle abilities. DB table `pet_battle_ability` is empty.");
+        return;
+    }
+
+    uint32 count = 0;
+    BarGoLink bar(result->GetRowCount());
+
+    do
+    {
+        bar.step();
+        Field* fields = result->Fetch();
+
+        PetBattleAbility ability;
+        ability.id = fields[0].GetUInt32();
+        ability.name = fields[1].GetCppString();
+        ability.effectType = fields[2].GetUInt8();
+        ability.baseValue = fields[3].GetFloat();
+        ability.valuePerLevel = fields[4].GetFloat();
+
+        m_PetBattleAbilities[ability.id] = ability;
+        ++count;
+    }
+    while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u pet battle abilities.", count);
+}
+
+void ObjectMgr::LoadPetBattleSpeciesAbilities()
+{
+    m_PetBattleSpeciesAbilities.clear();
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `slot`, `ability_id` FROM `pet_battle_abilities` ORDER BY `entry`, `slot`"));
+
+    if (!result)
+    {
+        BarGoLink bar(1);
+        bar.step();
+
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 pet battle species ability kits. DB table `pet_battle_abilities` is empty.");
+        return;
+    }
+
+    uint32 count = 0;
+    BarGoLink bar(result->GetRowCount());
+
+    do
+    {
+        bar.step();
+        Field* fields = result->Fetch();
+
+        uint32 entry = fields[0].GetUInt32();
+        uint32 abilityId = fields[2].GetUInt32();
+
+        if (!GetPetBattleAbility(abilityId))
+        {
+            sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Pet battle species %u names ability %u, which `pet_battle_ability` does not have.", entry, abilityId);
+            continue;
+        }
+
+        m_PetBattleSpeciesAbilities[entry].push_back(abilityId);
+        ++count;
+    }
+    while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u pet battle species ability kit rows.", count);
+}
+
+void ObjectMgr::LoadPetBattleWild()
+{
+    m_PetBattleWild.clear();
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry` FROM `pet_battle_wild`"));
+
+    if (!result)
+    {
+        BarGoLink bar(1);
+        bar.step();
+
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+        sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded 0 battleable wild critters. DB table `pet_battle_wild` is empty.");
+        return;
+    }
+
+    uint32 count = 0;
+    BarGoLink bar(result->GetRowCount());
+
+    do
+    {
+        bar.step();
+        Field* fields = result->Fetch();
+
+        m_PetBattleWild.insert(fields[0].GetUInt32());
+        ++count;
+    }
+    while (result->NextRow());
+
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, ">> Loaded %u battleable wild critters.", count);
+}
+
 void ObjectMgr::LoadFactionChangeReputations()
 {
     factionchange_reputations.clear();

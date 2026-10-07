@@ -1856,6 +1856,12 @@ void World::SetInitialWorldSettings()
     sObjectMgr.LoadFactionChangeQuests();
     sObjectMgr.LoadFactionChangeMounts();
 
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "");
+    sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading Critter Combat pet battle data ...");
+    sObjectMgr.LoadPetBattleAbilities();
+    sObjectMgr.LoadPetBattleSpeciesAbilities();
+    sObjectMgr.LoadPetBattleWild();
+
     sLog.Out(LOG_BASIC, LOG_LVL_MINIMAL, "Loading loot-disabled map list");
     sObjectMgr.LoadMapLootDisabled();
 

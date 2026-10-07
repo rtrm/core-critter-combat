@@ -1415,6 +1415,43 @@ class ObjectMgr
         SkillLineAbilityEntry const* GetSkillLineAbility(uint32 id) const { return id < GetMaxSkillLineAbilityId() ? m_SkillLineAbilities[id].get() : nullptr; }
         uint32 GetMaxSkillLineAbilityId() const { return m_SkillLineAbilities.size(); }
 
+        // Critter Combat (see the critter-combat repo's ARCHITECTURE.md): a pet's three abilities
+        // are their own data, not spell_template rows - turn-based 1v1 pet combat has no cast
+        // time/GCD/mana/LOS, most of what spell_template's columns exist for.
+        struct PetBattleAbility
+        {
+            uint32 id;
+            std::string name;
+            uint8 effectType; // 1 DAMAGE, 2 HIT_CHANCE_DEBUFF (enemy), 3 DAMAGE_TAKEN_SHIELD (self)
+            float baseValue;
+            float valuePerLevel;
+        };
+        typedef std::unordered_map<uint32, PetBattleAbility> PetBattleAbilityMap;
+        typedef std::unordered_map<uint32, std::vector<uint32>> PetBattleSpeciesAbilityMap;
+        void LoadPetBattleAbilities();
+        void LoadPetBattleSpeciesAbilities();
+        void LoadPetBattleWild();
+        PetBattleAbility const* GetPetBattleAbility(uint32 id) const
+        {
+            auto itr = m_PetBattleAbilities.find(id);
+            return itr != m_PetBattleAbilities.end() ? &itr->second : nullptr;
+        }
+        // The creature_template entry's three ability ids, in slot order; empty if this species
+        // has none authored yet.
+        std::vector<uint32> const* GetPetBattleAbilities(uint32 creatureEntry) const
+        {
+            auto itr = m_PetBattleSpeciesAbilities.find(creatureEntry);
+            return itr != m_PetBattleSpeciesAbilities.end() ? &itr->second : nullptr;
+        }
+        // Battleable, and therefore capturable (ARCHITECTURE.md: no separate capturable flag).
+        bool IsPetBattleWild(uint32 creatureEntry) const
+        {
+            return m_PetBattleWild.count(creatureEntry) != 0;
+        }
+        PetBattleAbilityMap m_PetBattleAbilities;
+        PetBattleSpeciesAbilityMap m_PetBattleSpeciesAbilities;
+        std::set<uint32> m_PetBattleWild;
+
         // Changes of faction
         typedef std::map<uint32, uint32> CharacterConversionMap;
         CharacterConversionMap factionchange_reputations;

@@ -1249,6 +1249,12 @@ static void TryLearnCritterCombatSpell(Player* pPlayer, uint32 spellId, uint32 c
 
 bool GossipHello_critter_combat_stablemaster(Player* pPlayer, Creature* pCreature)
 {
+    // Populate whatever native options Erma's own flags/menu already grant (for her that's just
+    // "I wish to stable my pet.", Hunter-gated, from UNIT_NPC_FLAG_STABLEMASTER) before layering
+    // our own option on top - a custom pGossipHello fully replaces the default gossip prep, so
+    // skipping this would silently drop native stablemaster access, as live testing caught.
+    pPlayer->PrepareGossipMenu(pCreature, pCreature->GetDefaultGossipMenuId());
+
     pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Critter Combat", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_MAIN);
     pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pCreature), pCreature->GetObjectGuid());
     return true;
@@ -1271,6 +1277,14 @@ bool GossipSelect_critter_combat_stablemaster(Player* pPlayer, Creature* pCreatu
     {
         TryLearnCritterCombatSpell(pPlayer, SPELL_CAPTURE_CRITTER, COST_CAPTURE_CRITTER, "Capture");
         pPlayer->CLOSE_GOSSIP_MENU();
+    }
+    // Native options PrepareGossipMenu added (e.g. GOSSIP_OPTION_STABLEPET) route through this
+    // same scripted handler - a custom pGossipSelect fully replaces Player::OnGossipSelect's own
+    // switch, so without this they'd be clickable but silently do nothing. Mirrors exactly what
+    // that native switch does for this one case.
+    else if (uiAction == GOSSIP_OPTION_STABLEPET)
+    {
+        pPlayer->GetSession()->SendStablePet(pCreature->GetObjectGuid());
     }
 
     return true;

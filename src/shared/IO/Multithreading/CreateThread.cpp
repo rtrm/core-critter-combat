@@ -4,9 +4,6 @@
 #define WIN32_LEAN_AND_MEAN
 #include <Windows.h>
 #undef WIN32_LEAN_AND_MEAN
-#if defined(__MINGW32__)
-#include <seh.h>
-#endif
 #elif defined(__linux__) || defined(__APPLE__) || defined(__FreeBSD__) || defined(__NetBSD__) || defined(__OpenBSD__)
 #include <pthread.h>
 #endif
@@ -32,9 +29,24 @@ std::thread IO::Multithreading::CreateThread(std::string const& name, std::funct
 void IO::Multithreading::RenameCurrentThread(std::string const& name)
 {
 #if defined(WIN32)
-    // Windows part taken from https://stackoverflow.com/a/23899379
-    // SetThreadDescription is only supported on >= Win10, that's why we are using this approach
+#if defined(__MINGW32__)
+    // MinGW has no working SEH __try/__except on x64 (the legacy libseh shim this
+    // used to call into only emulates 32-bit x86 SEH and crashes here on x64), so
+    // the old "raise a magic exception for the debugger" trick is unusable here.
+    // SetThreadDescription (Win10+) is the real, non-crashing replacement; it's
+    // resolved dynamically since this codebase's minimum supported Windows may be
+    // older than 10. Thread naming is debugging QoL only - silently skip if absent.
+    using SetThreadDescriptionFn = HRESULT(WINAPI*)(HANDLE, PCWSTR);
+    static SetThreadDescriptionFn pSetThreadDescription = reinterpret_cast<SetThreadDescriptionFn>(
+        reinterpret_cast<void*>(GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "SetThreadDescription")));
 
+    if (pSetThreadDescription)
+    {
+        std::wstring wname(name.begin(), name.end());
+        pSetThreadDescription(GetCurrentThread(), wname.c_str());
+    }
+#else
+    // Windows part taken from https://stackoverflow.com/a/23899379
     const DWORD MS_VC_EXCEPTION=0x406D1388;
 #pragma pack(push,8)
     typedef struct tagTHREADNAME_INFO
@@ -52,17 +64,6 @@ void IO::Multithreading::RenameCurrentThread(std::string const& name)
     info.dwThreadID = GetCurrentThreadId();
     info.dwFlags = 0;
 
-#if defined(__MINGW32__)
-    // MinGW lacks SEH __try/__except syntax, so the libseh macros are used.
-    __seh_try
-    {
-        RaiseException(MS_VC_EXCEPTION, 0, sizeof(info) / sizeof(ULONG_PTR), (ULONG_PTR*)&info);
-    }
-    __seh_except(EXCEPTION_EXECUTE_HANDLER)
-    {
-    }
-    __seh_end_except
-#else
     __try
     {
         RaiseException( MS_VC_EXCEPTION, 0, sizeof(info)/sizeof(ULONG_PTR), (ULONG_PTR*)&info );

@@ -243,6 +243,31 @@ struct DuelInfo
     bool finished = false;
 };
 
+// Critter Combat (see the critter-combat repo's ARCHITECTURE.md): the transient state of one
+// turn-based pet battle, resolved entirely server-side and torn down synchronously the instant
+// either side's HP reaches 0 - unlike DuelInfo there is no delayed-delete tick, since a round is
+// fully resolved within one WorldSession::HandlePetBattleUseAbilityOpcode call.
+struct PetBattleSession
+{
+    ObjectGuid playerPetGuid;
+    uint32 playerPetLevel = 0;
+    uint32 playerPetMaxHp = 0;
+    uint32 playerPetCurrentHp = 0;
+    uint32 playerAbilityIds[3] = { 0, 0, 0 };
+    // DAMAGE_TAKEN_SHIELD absorbs this side's next incoming hit, consumed by it; a pending miss
+    // chance (from the other side's HIT_CHANCE_DEBUFF) is rolled against this side's next action.
+    uint32 playerPendingShield = 0;
+    uint32 playerPendingMissChance = 0;
+
+    ObjectGuid enemyGuid;
+    uint32 enemyLevel = 0;
+    uint32 enemyMaxHp = 0;
+    uint32 enemyCurrentHp = 0;
+    uint32 enemyAbilityIds[3] = { 0, 0, 0 };
+    uint32 enemyPendingShield = 0;
+    uint32 enemyPendingMissChance = 0;
+};
+
 struct Areas
 {
     uint32 areaID = 0;
@@ -2212,6 +2237,11 @@ class Player final: public Unit
         void CheckDuelDistance(time_t currTime);
         void DuelComplete(DuelCompleteType type);
         void SendDuelCountdown(uint32 counter) const;
+
+        // Critter Combat (see the critter-combat repo's ARCHITECTURE.md). Implemented in
+        // PetBattleCombat.cpp, not Player.cpp, alongside the rest of the battle engine.
+        PetBattleSession* m_petBattle = nullptr;
+        void StartPetBattle(Creature* wild);
 
         void RewardHonor(Unit const* pVictim, uint32 groupSize);
         void RewardHonorOnDeath();

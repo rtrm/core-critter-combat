@@ -939,6 +939,12 @@ Handlers BuildOpcodeList()
     INVALID_PACKET(SMSG_CHARACTER_PROFILE,            UnhandleReason::SendByServer);
     INVALID_PACKET(SMSG_CHARACTER_PROFILE_REALM_CONNECTED, UnhandleReason::SendByServer);
     INVALID_PACKET(SMSG_DEFENSE_MESSAGE,              UnhandleReason::SendByServer);
+
+    // Critter Combat (see the critter-combat repo's ARCHITECTURE.md): this fork's own opcodes.
+    DEFINE_HANDLER(CMSG_PET_BATTLE_USE_ABILITY,       STATUS_LOGGEDIN,  PACKET_PROCESS_MAP,           &WorldSession::HandlePetBattleUseAbilityOpcode);
+    INVALID_PACKET(SMSG_PET_BATTLE_START,             UnhandleReason::SendByServer);
+    INVALID_PACKET(SMSG_PET_BATTLE_UPDATE,            UnhandleReason::SendByServer);
+    INVALID_PACKET(SMSG_PET_BATTLE_END,               UnhandleReason::SendByServer);
 #endif
 
     return list;

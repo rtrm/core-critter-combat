@@ -36,6 +36,7 @@ set (game_SRCS
     ObjectGuid.cpp
     ObjectMgr.cpp
     ObjectPosSelector.cpp
+    PetBattleCombat.cpp
     PlayerDump.cpp
     QuestDef.cpp
     ReputationMgr.cpp
@@ -117,6 +118,7 @@ set (game_SRCS
     Handlers/MiscHandler.cpp
     Handlers/MovementHandler.cpp
     Handlers/NPCHandler.cpp
+    Handlers/PetBattleHandler.cpp
     Handlers/PetHandler.cpp
     Handlers/PetitionsHandler.cpp
     Handlers/QueryHandler.cpp
@@ -215,6 +217,7 @@ set (game_SRCS
     Server/Packets/Npc.cpp
     Server/Packets/ObjectUpdate.cpp
     Server/Packets/Pet.cpp
+    Server/Packets/PetBattle.cpp
     Server/Packets/Petition.cpp
     Server/Packets/Query.cpp
     Server/Packets/Quest.cpp
@@ -275,6 +278,7 @@ set (game_SRCS
     ObjectMgr.h
     ObjectPosSelector.h
     PacketProcessing.h
+    PetBattleCombat.h
     PlayerDump.h
     QuestDef.h
     ReputationMgr.h
@@ -470,6 +474,7 @@ set (game_SRCS
     Server/Packets/Npc.h
     Server/Packets/ObjectUpdate.h
     Server/Packets/Pet.h
+    Server/Packets/PetBattle.h
     Server/Packets/Petition.h
     Server/Packets/Query.h
     Server/Packets/Quest.h

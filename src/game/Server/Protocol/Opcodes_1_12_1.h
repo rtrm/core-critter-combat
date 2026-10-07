@@ -825,5 +825,15 @@ enum OpcodesList
     SMSG_CHARACTER_PROFILE                 = 824,
     SMSG_CHARACTER_PROFILE_REALM_CONNECTED = 825,
     SMSG_DEFENSE_MESSAGE                   = 827,
-    NUM_MSG_TYPES                          = 828
+
+    // Critter Combat (see the critter-combat repo's ARCHITECTURE.md): this fork's only custom
+    // opcodes - everything else in this file is stock vanilla protocol. Only this one version
+    // header is ever compiled (Opcodes_active.h picks exactly one via SUPPORTED_CLIENT_BUILD, and
+    // this fork pins to 1.12.1), so there is nothing to mirror into the other Opcodes_1_*.h files.
+    CMSG_PET_BATTLE_USE_ABILITY            = 829,
+    SMSG_PET_BATTLE_START                  = 830,
+    SMSG_PET_BATTLE_UPDATE                 = 831,
+    SMSG_PET_BATTLE_END                    = 832,
+
+    NUM_MSG_TYPES                          = 833
 };

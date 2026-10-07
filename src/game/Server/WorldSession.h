@@ -54,6 +54,7 @@
 #include "Packets/Movement.h"
 #include "Packets/Npc.h"
 #include "Packets/Pet.h"
+#include "Packets/PetBattle.h"
 #include "Packets/Petition.h"
 #include "Packets/Query.h"
 #include "Packets/Quest.h"
@@ -662,6 +663,9 @@ class WorldSession
         void HandleBuyStableSlot(WorldPackets::Npc::BuyStableSlot const& packet);
         void HandleStableRevivePet(NullClientPacket const& packet);
         void HandleStableSwapPet(WorldPackets::Npc::StableSwapPet const& packet);
+
+        // Critter Combat (see the critter-combat repo's ARCHITECTURE.md).
+        void HandlePetBattleUseAbilityOpcode(WorldPackets::PetBattle::UseAbility const& packet);
 
         void HandleDuelAcceptedOpcode(WorldPackets::Duel::DuelAccepted const& packet);
         void HandleDuelCancelledOpcode(WorldPackets::Duel::DuelCancelled const& packet);

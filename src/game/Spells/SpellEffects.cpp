@@ -337,6 +337,14 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                         pRanshalla->ForcedDespawn();
                     return;
                 }
+                case 64000: // Critter Combat: Engage Critter Combat (critter-combat ARCHITECTURE.md)
+                {
+                    Player* player = m_casterUnit ? m_casterUnit->ToPlayer() : nullptr;
+                    Creature* wild = unitTarget ? unitTarget->ToCreature() : nullptr;
+                    if (player && wild)
+                        player->StartPetBattle(wild);
+                    return;
+                }
                 case 20863: // Muglash's Brazier Trap
                 {
                     if (unitTarget && unitTarget->IsCreature())

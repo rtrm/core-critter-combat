@@ -1265,7 +1265,7 @@ bool GossipSelect_critter_combat_stablemaster(Player* pPlayer, Creature* pCreatu
     if (uiAction == GOSSIP_CRITTER_COMBAT_MAIN)
     {
         pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Engage Critter Combat - 5 silver", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_ENGAGE);
-        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Capture - 20 silver", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_CAPTURE);
+        pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Capture Critter - 20 silver", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_CAPTURE);
         pPlayer->SEND_GOSSIP_MENU(DEFAULT_GOSSIP_MESSAGE, pCreature->GetObjectGuid());
     }
     else if (uiAction == GOSSIP_CRITTER_COMBAT_ENGAGE)
@@ -1275,7 +1275,7 @@ bool GossipSelect_critter_combat_stablemaster(Player* pPlayer, Creature* pCreatu
     }
     else if (uiAction == GOSSIP_CRITTER_COMBAT_CAPTURE)
     {
-        TryLearnCritterCombatSpell(pPlayer, SPELL_CAPTURE_CRITTER, COST_CAPTURE_CRITTER, "Capture");
+        TryLearnCritterCombatSpell(pPlayer, SPELL_CAPTURE_CRITTER, COST_CAPTURE_CRITTER, "Capture Critter");
         pPlayer->CLOSE_GOSSIP_MENU();
     }
     // Native options PrepareGossipMenu added (e.g. GOSSIP_OPTION_STABLEPET) route through this

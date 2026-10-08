@@ -165,18 +165,20 @@ void Player::StartPetBattle(Creature* wild)
     }
 
     // "No camera change... the two pets simply position themselves facing each other" (ARCHITECTURE.md).
-    // Clear()+MoveIdle() on both: the wild critter's own CritterAI::SpellHit just queued a 30s
-    // flee from the Engage Critter Combat cast itself (any non-positive, non-direct-damage spell
-    // hit triggers it - true of our placeholder-effect spell even though it deals no damage), and
-    // the player's pet would otherwise keep following its owner. Nothing else re-triggers either
-    // during the fight: in-battle ability effects move HP directly on the session, never through
-    // Unit::DealDamage/SpellHit, so there is no further real hit for CritterAI to react to.
+    // Clear()+MoveIdle() on both: the wild critter's own flee-on-hostile-spell reaction is handled
+    // separately (CritterAI::SpellHit special-cases spell 64000), but the player's pet would
+    // otherwise keep following its owner, so it still needs freezing here.
     pet->GetMotionMaster()->Clear();
     pet->GetMotionMaster()->MoveIdle();
     wild->GetMotionMaster()->Clear();
     wild->GetMotionMaster()->MoveIdle();
     pet->SetFacingToObject(wild);
     wild->SetFacingToObject(pet);
+
+    // Both units' real Health is about to show the battle's HP (below) - their own passive regen
+    // would otherwise silently heal them back up between rounds, undermining the fight.
+    pet->ClearCreatureState(CSTATE_REGEN_HEALTH);
+    wild->ClearCreatureState(CSTATE_REGEN_HEALTH);
 
     m_petBattle = new PetBattleSession();
     m_petBattle->playerPetGuid = pet->GetObjectGuid();

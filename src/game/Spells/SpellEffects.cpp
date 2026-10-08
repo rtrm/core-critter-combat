@@ -5438,16 +5438,17 @@ void Spell::EffectSummonCritter(SpellEffectIndex effIdx)
     }
 
     // Critter Combat (ARCHITECTURE.md "Pet health & death" / Milestone step 6): a battle-capable
-    // companion fainted at 0 HP is unsummonable until healed - checked here, not just at battle
-    // start, since summoning is the one place a fainted pet would otherwise show up alive again.
-    if (sObjectMgr.GetPetBattleAbilities(petEntry))
+    // companion's persisted level/HP, loaded once here and reused below rather than queried twice -
+    // both to gate a fainted (0 HP) companion's summon entirely, and (after the critter actually
+    // exists) to make its real Health/MaxHealth reflect that persisted state immediately, so it's
+    // shown correctly outside of battle too, not just borrowed mid-fight.
+    bool isBattlePet = sObjectMgr.GetPetBattleAbilities(petEntry) != nullptr;
+    uint32 persistedLevel = 0, persistedHp = 0;
+    bool hasPetRecord = isBattlePet && PetBattleCombat::LoadPetRecord(player->GetGUIDLow(), m_spellInfo->Id, persistedLevel, persistedHp);
+    if (hasPetRecord && persistedHp == 0)
     {
-        uint32 level, currentHp;
-        if (PetBattleCombat::LoadPetRecord(player->GetGUIDLow(), m_spellInfo->Id, level, currentHp) && currentHp == 0)
-        {
-            player->GetSession()->SendNotification("%s has fainted and can't be summoned until healed.", cInfo->name.c_str());
-            return;
-        }
+        player->GetSession()->SendNotification("%s has fainted and can't be summoned until healed.", cInfo->name.c_str());
+        return;
     }
 
     Pet* oldCritter = player->GetMiniPet();
@@ -5492,6 +5493,26 @@ void Spell::EffectSummonCritter(SpellEffectIndex effIdx)
     critter->AIM_Initialize();
     critter->InitPetCreateSpells();                         // e.g. disgusting oozeling has a create spell as critter...
     critter->SelectLevel();                                 // some summoned creatures have different from 1 DB data for level/hp
+
+    if (isBattlePet)
+    {
+        // First summon ever (no record): this companion has never fought - fix its level at
+        // whatever SelectLevel() just gave it and start it full; that becomes its level and HP
+        // going forward (ARCHITECTURE.md: "pets do not gain levels after that"). Otherwise, the
+        // persisted level/HP override whatever SelectLevel() would have picked, so a reused
+        // companion always comes back exactly as it was left, not reset to its template default.
+        uint32 level = hasPetRecord ? persistedLevel : critter->GetLevel();
+        uint32 hp = hasPetRecord ? persistedHp : PetBattleCombat::MaxHp(level);
+        critter->SetUInt32Value(UNIT_FIELD_LEVEL, level);
+        critter->SetMaxHealth(PetBattleCombat::MaxHp(level));
+        critter->SetHealth(hp);
+        // Only a stable master or a Pet Bandage heals a battle companion (ARCHITECTURE.md step 6) -
+        // its passive regen is cleared for good from the moment it's first summoned, not just
+        // while actually mid-battle.
+        critter->ClearCreatureState(CSTATE_REGEN_HEALTH);
+        if (!hasPetRecord)
+            PetBattleCombat::SavePetRecord(player->GetGUIDLow(), m_spellInfo->Id, level, hp);
+    }
 
     map->Add((Creature*)critter);
     player->_SetMiniPet(critter);

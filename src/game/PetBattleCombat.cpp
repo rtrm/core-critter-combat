@@ -248,6 +248,19 @@ void Player::StartPetBattle(Creature* wild)
         return;
     }
 
+    // Persistent pet HP (ARCHITECTURE.md step 6): the companion's real Health always reflects its
+    // persisted battle HP now, in and out of battle (kept in sync by EffectSummonCritter,
+    // EndPetBattle, HealMiniPet and ResurrectAllPets) - so 0 here means genuinely fainted, caught
+    // *before* any of the freezing side effects below. Live testing caught the bug in putting this
+    // check after them instead: a fainted pet's Engage attempt would still freeze both creatures in
+    // place facing each other and clear their regen, then return without ever creating a battle to
+    // end that state - leaving both of them stuck frozen with no way out.
+    if (pet->GetHealth() == 0)
+    {
+        GetSession()->SendNotification("%s has fainted! Heal it at a stable master or with a Pet Bandage before it can fight.", pet->GetName());
+        return;
+    }
+
     // "No camera change... the two pets simply position themselves facing each other" (ARCHITECTURE.md).
     // Clear(true, true)+MoveIdle() on both: the wild critter's own flee-on-hostile-spell reaction
     // is handled separately (CritterAI::SpellHit special-cases spell 64000), but its default
@@ -263,33 +276,21 @@ void Player::StartPetBattle(Creature* wild)
     pet->SetFacingToObject(wild);
     wild->SetFacingToObject(pet);
 
-    // Both units' real Health is about to show the battle's HP (below) - their own passive regen
-    // would otherwise silently heal them back up between rounds, undermining the fight.
-    pet->ClearCreatureState(CSTATE_REGEN_HEALTH);
+    // The wild critter's real Health is about to show the battle's HP (below) - its own passive
+    // regen would otherwise silently heal it back up between rounds, undermining the fight. The
+    // player's pet already has regen permanently cleared from the moment it's summoned (step 6:
+    // it only heals via a stable master or a Pet Bandage, never passively), so nothing to do for
+    // it here.
     wild->ClearCreatureState(CSTATE_REGEN_HEALTH);
-
-    // Persistent pet HP (ARCHITECTURE.md step 6): level is fixed the first time this companion
-    // ever enters a battle (not recalculated from the live creature on every summon - it doesn't
-    // gain levels after that), and current HP carries over from however the last fight or heal
-    // left it. No record yet means this companion has never fought - start it full at its current
-    // live level, and that becomes its fixed level and HP going forward.
-    uint32 summonSpellId = pet->GetUInt32Value(UNIT_CREATED_BY_SPELL);
-    uint32 persistedLevel = pet->GetLevel();
-    uint32 persistedHp = 0;
-    bool hasRecord = PetBattleCombat::LoadPetRecord(GetGUIDLow(), summonSpellId, persistedLevel, persistedHp);
-    if (hasRecord && persistedHp == 0)
-    {
-        GetSession()->SendNotification("%s has fainted! Heal it at a stable master or with a Pet Bandage before it can fight.", pet->GetName());
-        return;
-    }
-    if (!hasRecord)
-        persistedHp = PetBattleCombat::MaxHp(persistedLevel);
 
     m_petBattle = new PetBattleSession();
     m_petBattle->playerPetGuid = pet->GetObjectGuid();
-    m_petBattle->playerPetLevel = persistedLevel;
-    m_petBattle->playerPetMaxHp = PetBattleCombat::MaxHp(persistedLevel);
-    m_petBattle->playerPetCurrentHp = persistedHp;
+    // The companion's real Health/MaxHealth already *is* its battle stats, kept correct outside of
+    // battle too (ARCHITECTURE.md step 6) - no separate "battle-scale" math needed here, and
+    // nothing to save-and-restore at battle end either, unlike the wild critter below.
+    m_petBattle->playerPetLevel = pet->GetLevel();
+    m_petBattle->playerPetMaxHp = pet->GetMaxHealth();
+    m_petBattle->playerPetCurrentHp = pet->GetHealth();
     for (uint8 i = 0; i < 3; ++i)
         m_petBattle->playerAbilityIds[i] = (*playerAbilityIds)[i];
 
@@ -300,14 +301,10 @@ void Player::StartPetBattle(Creature* wild)
     for (uint8 i = 0; i < 3; ++i)
         m_petBattle->enemyAbilityIds[i] = (*enemyAbilityIds)[i];
 
-    // The battle's HP lives on each combatant's own real health bar, not a custom UI - save their
-    // actual Health/MaxHealth to restore exactly at battle end, then overwrite with battle values.
-    m_petBattle->playerPetOriginalMaxHp = pet->GetMaxHealth();
-    m_petBattle->playerPetOriginalHp = pet->GetHealth();
+    // The wild critter isn't persisted - it's ordinary wildlife outside of this one fight, so its
+    // real Health/MaxHealth is saved here and restored exactly at battle end (below), same as ever.
     m_petBattle->enemyOriginalMaxHp = wild->GetMaxHealth();
     m_petBattle->enemyOriginalHp = wild->GetHealth();
-    pet->SetMaxHealth(m_petBattle->playerPetMaxHp);
-    pet->SetHealth(m_petBattle->playerPetCurrentHp);
     wild->SetMaxHealth(m_petBattle->enemyMaxHp);
     wild->SetHealth(m_petBattle->enemyCurrentHp);
 
@@ -406,19 +403,18 @@ void Player::EndPetBattle(PetBattleEndReason reason)
     end->playerWon = reason != PetBattleEndReason::PlayerLost;
     GetSession()->SendPacket(std::move(end));
 
-    // Hand movement and regen back to the player's pet (always alive) - StartPetBattle froze both
-    // to stop it following its owner and borrowed its real Health/MaxHealth to show the battle's
-    // HP on its own health bar, both restored here regardless of how the battle ended. The battle
-    // HP itself (not the restored real HP, which is the companion's own separate native stat) is
-    // what persists (ARCHITECTURE.md step 6) - the ending HP from this fight becomes the pet's
-    // starting HP next time, win or lose, rather than resetting to full on every StartPetBattle.
+    // Hand movement back to the player's pet (always alive in the engine's own sense - a "fainted"
+    // companion just shows 0 HP, it's never actually killed) - StartPetBattle froze it to stop it
+    // following its owner. Its real Health simply keeps showing this fight's ending HP (0 on a
+    // loss included) rather than being restored to some separate stat - that ending HP is also
+    // what persists (ARCHITECTURE.md step 6), live outside of battle too, so it's both the saved
+    // record and what the player actually sees on the health bar from here on. Regen stays
+    // cleared (set once at summon, step 6: only a stable master or a Pet Bandage heals it).
     Pet* pet = GetMap()->GetPet(battle->playerPetGuid);
     if (pet)
     {
         pet->GetMotionMaster()->Initialize();
-        pet->AddCreatureState(CSTATE_REGEN_HEALTH);
-        pet->SetMaxHealth(battle->playerPetOriginalMaxHp);
-        pet->SetHealth(battle->playerPetOriginalHp);
+        pet->SetHealth(battle->playerPetCurrentHp);
         PetBattleCombat::SavePetRecord(GetGUIDLow(), pet->GetUInt32Value(UNIT_CREATED_BY_SPELL), battle->playerPetLevel, battle->playerPetCurrentHp);
     }
 
@@ -454,12 +450,21 @@ void Player::EndPetBattle(PetBattleEndReason reason)
 }
 
 // Heal path 1 (ARCHITECTURE.md "Pet health & death" / Milestone step 6): a Pet Bandage item's
-// on-use effect (spell 64002, SpellEffects.cpp) fully heals the currently-summoned mini pet's
-// persisted battle HP. Doesn't touch the companion's real native Health/MaxHealth at all - those
-// are a separate, irrelevant stat outside of battle (see StartPetBattle/EndPetBattle's own
-// comments) - only the `character_pet_battle` record that governs its next fight.
+// on-use effect (spell 64002, SpellEffects.cpp) fully heals the currently-summoned companion's
+// real, already-authoritative Health (EffectSummonCritter/EndPetBattle keep it in sync with the
+// persisted record at every point that matters, so there's no separate value to read here).
+// Out-of-battle only, per live feedback - mid-battle the companion's Health is this fight's live,
+// still-changing HP, not a stale "full from before the fight started" snapshot, so healing it here
+// would either double up with the battle engine or read misleading numbers; Capture already has
+// its own, separate, round-costing way to interact with an active fight.
 void Player::HealMiniPet()
 {
+    if (m_petBattle)
+    {
+        GetSession()->SendNotification("You can't use a Pet Bandage during a fight.");
+        return;
+    }
+
     Pet* pet = GetMiniPet();
     if (!pet || !sObjectMgr.GetPetBattleAbilities(pet->GetEntry()))
     {
@@ -467,18 +472,14 @@ void Player::HealMiniPet()
         return;
     }
 
-    uint32 summonSpellId = pet->GetUInt32Value(UNIT_CREATED_BY_SPELL);
-    uint32 level = pet->GetLevel();
-    uint32 currentHp = 0;
-    bool hasRecord = PetBattleCombat::LoadPetRecord(GetGUIDLow(), summonSpellId, level, currentHp);
-    uint32 maxHp = PetBattleCombat::MaxHp(level);
-    if (hasRecord && currentHp >= maxHp)
+    if (pet->GetHealth() >= pet->GetMaxHealth())
     {
         GetSession()->SendNotification("%s is already at full health.", pet->GetName());
         return;
     }
 
-    PetBattleCombat::SavePetRecord(GetGUIDLow(), summonSpellId, level, maxHp);
+    pet->SetHealth(pet->GetMaxHealth());
+    PetBattleCombat::SavePetRecord(GetGUIDLow(), pet->GetUInt32Value(UNIT_CREATED_BY_SPELL), pet->GetLevel(), pet->GetMaxHealth());
     GetSession()->SendNotification("You used a Pet Bandage on %s.", pet->GetName());
 }
 
@@ -526,7 +527,17 @@ uint32 PetBattleCombat::ResurrectAllPets(Player* player)
         return 0;
 
     player->ModifyMoney(-static_cast<int32>(totalCopper));
+    // If the currently-summoned companion is one of the ones just healed, its real Health needs
+    // the same update right now - otherwise it'd keep showing 0 until the next summon toggle,
+    // even though the record underneath it is already fixed.
+    Pet* summoned = player->GetMiniPet();
+    uint32 summonedSpellId = summoned ? summoned->GetUInt32Value(UNIT_CREATED_BY_SPELL) : 0;
     for (Dead const& d : dead)
-        SavePetRecord(player->GetGUIDLow(), d.summonSpellId, d.level, MaxHp(d.level));
+    {
+        uint32 maxHp = MaxHp(d.level);
+        SavePetRecord(player->GetGUIDLow(), d.summonSpellId, d.level, maxHp);
+        if (summoned && d.summonSpellId == summonedSpellId)
+            summoned->SetHealth(maxHp);
+    }
     return static_cast<uint32>(dead.size());
 }

@@ -2259,6 +2259,7 @@ class Player final: public Unit
         void StartPetBattle(Creature* wild);
         void TryCapturePet(Creature* wild);
         void EndPetBattle(PetBattleEndReason reason);
+        void HealMiniPet(); // Pet Bandage item's on-use effect (spell 64002)
 
         void RewardHonor(Unit const* pVictim, uint32 groupSize);
         void RewardHonorOnDeath();

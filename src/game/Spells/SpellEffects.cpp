@@ -27,6 +27,7 @@
 #include "Log.h"
 #include "World.h"
 #include "ObjectMgr.h"
+#include "PetBattleCombat.h"
 #include "SpellMgr.h"
 #include "Player.h"
 #include "Spell.h"
@@ -351,6 +352,12 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                     Creature* wild = unitTarget ? unitTarget->ToCreature() : nullptr;
                     if (player && wild)
                         player->TryCapturePet(wild);
+                    return;
+                }
+                case 64002: // Critter Combat: Pet Bandage (critter-combat ARCHITECTURE.md step 6)
+                {
+                    if (Player* player = m_casterUnit ? m_casterUnit->ToPlayer() : nullptr)
+                        player->HealMiniPet();
                     return;
                 }
                 case 20863: // Muglash's Brazier Trap
@@ -5428,6 +5435,19 @@ void Spell::EffectSummonCritter(SpellEffectIndex effIdx)
     {
         sLog.Out(LOG_DBERROR, LOG_LVL_MINIMAL, "Spell::DoSummonCritter: creature entry %u not found for spell %u.", petEntry, m_spellInfo->Id);
         return;
+    }
+
+    // Critter Combat (ARCHITECTURE.md "Pet health & death" / Milestone step 6): a battle-capable
+    // companion fainted at 0 HP is unsummonable until healed - checked here, not just at battle
+    // start, since summoning is the one place a fainted pet would otherwise show up alive again.
+    if (sObjectMgr.GetPetBattleAbilities(petEntry))
+    {
+        uint32 level, currentHp;
+        if (PetBattleCombat::LoadPetRecord(player->GetGUIDLow(), m_spellInfo->Id, level, currentHp) && currentHp == 0)
+        {
+            player->GetSession()->SendNotification("%s has fainted and can't be summoned until healed.", cInfo->name.c_str());
+            return;
+        }
     }
 
     Pet* oldCritter = player->GetMiniPet();

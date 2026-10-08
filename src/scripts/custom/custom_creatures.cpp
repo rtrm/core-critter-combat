@@ -16,6 +16,7 @@
 
 #include "scriptPCH.h"
 #include "custom.h"
+#include "PetBattleCombat.h"
 #include "ScriptedAI.h"
 #include <ctime>
 
@@ -1226,6 +1227,7 @@ CreatureAI* GetAI_custom_summon_debug(Creature *creature)
 #define GOSSIP_CRITTER_COMBAT_MAIN     (GOSSIP_ACTION_INFO_DEF + 500)
 #define GOSSIP_CRITTER_COMBAT_ENGAGE   (GOSSIP_ACTION_INFO_DEF + 501)
 #define GOSSIP_CRITTER_COMBAT_CAPTURE  (GOSSIP_ACTION_INFO_DEF + 502)
+#define GOSSIP_CRITTER_COMBAT_HEAL     (GOSSIP_ACTION_INFO_DEF + 503)
 
 // Placeholder ids/costs (ARCHITECTURE.md: real names and balance come later).
 #define SPELL_ENGAGE_CRITTER_COMBAT  64000
@@ -1256,6 +1258,7 @@ bool GossipHello_critter_combat_stablemaster(Player* pPlayer, Creature* pCreatur
     pPlayer->PrepareGossipMenu(pCreature, pCreature->GetDefaultGossipMenuId());
 
     pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Learn Critter Combat", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_MAIN);
+    pPlayer->ADD_GOSSIP_ITEM(GOSSIP_ICON_CHAT, "Heal my pets", GOSSIP_SENDER_MAIN, GOSSIP_CRITTER_COMBAT_HEAL);
     pPlayer->SEND_GOSSIP_MENU(pPlayer->GetGossipTextId(pCreature), pCreature->GetObjectGuid());
     return true;
 }
@@ -1276,6 +1279,20 @@ bool GossipSelect_critter_combat_stablemaster(Player* pPlayer, Creature* pCreatu
     else if (uiAction == GOSSIP_CRITTER_COMBAT_CAPTURE)
     {
         TryLearnCritterCombatSpell(pPlayer, SPELL_CAPTURE_CRITTER, COST_CAPTURE_CRITTER, "Capture Critter");
+        pPlayer->CLOSE_GOSSIP_MENU();
+    }
+    else if (uiAction == GOSSIP_CRITTER_COMBAT_HEAL)
+    {
+        uint32 cost = PetBattleCombat::DeadPetResurrectCost(pPlayer);
+        if (!cost)
+            pPlayer->GetSession()->SendNotification("All your pets are already in good health.");
+        else if (pPlayer->GetMoney() < cost)
+            pPlayer->GetSession()->SendNotification("Healing your fainted pet(s) costs %u silver %u copper - you don't have enough.", cost / 100, cost % 100);
+        else
+        {
+            uint32 healed = PetBattleCombat::ResurrectAllPets(pPlayer);
+            pPlayer->GetSession()->SendNotification("Healed %u pet(s) for %u silver %u copper.", healed, cost / 100, cost % 100);
+        }
         pPlayer->CLOSE_GOSSIP_MENU();
     }
     // Native options PrepareGossipMenu added (e.g. GOSSIP_OPTION_STABLEPET) route through this

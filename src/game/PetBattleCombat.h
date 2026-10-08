@@ -3,6 +3,7 @@
 
 #include "Common.h"
 
+class Player;
 struct PetBattleSession;
 
 // Critter Combat (see the critter-combat repo's ARCHITECTURE.md): the turn-based 1v1 pet battle
@@ -54,6 +55,27 @@ namespace PetBattleCombat
         bool playerWon = false;  // only meaningful when battleOver
     };
     CaptureOutcome ResolveCaptureRound(PetBattleSession& session, uint32 captureChancePercent);
+
+    // Persistence (ARCHITECTURE.md "Pet health & death" / Milestone step 6): a companion's battle
+    // HP carries across summons and fights now, rather than every StartPetBattle starting both
+    // sides full. Keyed by (character guid, summon spell id) - the same identity scheme a captured
+    // wild pet and a pre-existing companion already share in `character_spell` - against the
+    // `character_pet_battle` table `20261007150700_characters.sql` already created for this.
+    //
+    // Returns false (out params untouched) if this companion has no record yet - every caller
+    // treats that as "never fought, assume full health at its current live level" and creates the
+    // record the first time it matters (battle start), rather than eagerly on every summon.
+    bool LoadPetRecord(uint32 charGuidLow, uint32 summonSpellId, uint32& outLevel, uint32& outCurrentHp);
+    // Upserts the record - used both after a battle (persist the ending HP) and by a heal path
+    // (persist a full one).
+    void SavePetRecord(uint32 charGuidLow, uint32 summonSpellId, uint32 level, uint32 currentHp);
+
+    // Heal path 2 (ARCHITECTURE.md): the stable master's resurrect-all, split into a quote
+    // (so the gossip text can show the exact price without charging it) and the actual charge +
+    // heal. Both return 0 if there's nothing fainted to heal; ResurrectAllPets also returns 0 (and
+    // charges nothing) if the player can't afford DeadPetResurrectCost's quote.
+    uint32 DeadPetResurrectCost(Player* player);
+    uint32 ResurrectAllPets(Player* player); // returns how many pets were healed
 }
 
 #endif // MANGOS_PET_BATTLE_COMBAT_H

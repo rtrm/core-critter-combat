@@ -1,5 +1,6 @@
 #include "PetBattleCombat.h"
 
+#include "Database/DatabaseEnv.h"
 #include "ObjectMgr.h"
 #include "Utilities/Random.h"
 #include "Objects/Creature.h"
@@ -11,6 +12,27 @@
 uint32 PetBattleCombat::MaxHp(uint32 level)
 {
     return 20 + level * 5;
+}
+
+bool PetBattleCombat::LoadPetRecord(uint32 charGuidLow, uint32 summonSpellId, uint32& outLevel, uint32& outCurrentHp)
+{
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `level`, `current_hp` FROM `character_pet_battle` WHERE `guid` = %u AND `summon_spell_id` = %u",
+        charGuidLow, summonSpellId));
+    if (!result)
+        return false;
+
+    Field* fields = result->Fetch();
+    outLevel = fields[0].GetUInt32();
+    outCurrentHp = fields[1].GetUInt32();
+    return true;
+}
+
+void PetBattleCombat::SavePetRecord(uint32 charGuidLow, uint32 summonSpellId, uint32 level, uint32 currentHp)
+{
+    CharacterDatabase.PExecute(
+        "REPLACE INTO `character_pet_battle` (`guid`, `summon_spell_id`, `level`, `current_hp`) VALUES (%u, %u, %u, %u)",
+        charGuidLow, summonSpellId, level, currentHp);
 }
 
 uint32 PetBattleCombat::CaptureChance(uint32 playerPetLevel, uint32 enemyLevel, uint32 enemyHpPercent)
@@ -246,13 +268,28 @@ void Player::StartPetBattle(Creature* wild)
     pet->ClearCreatureState(CSTATE_REGEN_HEALTH);
     wild->ClearCreatureState(CSTATE_REGEN_HEALTH);
 
+    // Persistent pet HP (ARCHITECTURE.md step 6): level is fixed the first time this companion
+    // ever enters a battle (not recalculated from the live creature on every summon - it doesn't
+    // gain levels after that), and current HP carries over from however the last fight or heal
+    // left it. No record yet means this companion has never fought - start it full at its current
+    // live level, and that becomes its fixed level and HP going forward.
+    uint32 summonSpellId = pet->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+    uint32 persistedLevel = pet->GetLevel();
+    uint32 persistedHp = 0;
+    bool hasRecord = PetBattleCombat::LoadPetRecord(GetGUIDLow(), summonSpellId, persistedLevel, persistedHp);
+    if (hasRecord && persistedHp == 0)
+    {
+        GetSession()->SendNotification("%s has fainted! Heal it at a stable master or with a Pet Bandage before it can fight.", pet->GetName());
+        return;
+    }
+    if (!hasRecord)
+        persistedHp = PetBattleCombat::MaxHp(persistedLevel);
+
     m_petBattle = new PetBattleSession();
     m_petBattle->playerPetGuid = pet->GetObjectGuid();
-    m_petBattle->playerPetLevel = pet->GetLevel();
-    m_petBattle->playerPetMaxHp = PetBattleCombat::MaxHp(m_petBattle->playerPetLevel);
-    // Persistent pet HP (ARCHITECTURE.md step 6) isn't wired up yet - every battle starts at full
-    // HP for this pilot increment.
-    m_petBattle->playerPetCurrentHp = m_petBattle->playerPetMaxHp;
+    m_petBattle->playerPetLevel = persistedLevel;
+    m_petBattle->playerPetMaxHp = PetBattleCombat::MaxHp(persistedLevel);
+    m_petBattle->playerPetCurrentHp = persistedHp;
     for (uint8 i = 0; i < 3; ++i)
         m_petBattle->playerAbilityIds[i] = (*playerAbilityIds)[i];
 
@@ -371,7 +408,10 @@ void Player::EndPetBattle(PetBattleEndReason reason)
 
     // Hand movement and regen back to the player's pet (always alive) - StartPetBattle froze both
     // to stop it following its owner and borrowed its real Health/MaxHealth to show the battle's
-    // HP on its own health bar, both restored here regardless of how the battle ended.
+    // HP on its own health bar, both restored here regardless of how the battle ended. The battle
+    // HP itself (not the restored real HP, which is the companion's own separate native stat) is
+    // what persists (ARCHITECTURE.md step 6) - the ending HP from this fight becomes the pet's
+    // starting HP next time, win or lose, rather than resetting to full on every StartPetBattle.
     Pet* pet = GetMap()->GetPet(battle->playerPetGuid);
     if (pet)
     {
@@ -379,6 +419,7 @@ void Player::EndPetBattle(PetBattleEndReason reason)
         pet->AddCreatureState(CSTATE_REGEN_HEALTH);
         pet->SetMaxHealth(battle->playerPetOriginalMaxHp);
         pet->SetHealth(battle->playerPetOriginalHp);
+        PetBattleCombat::SavePetRecord(GetGUIDLow(), pet->GetUInt32Value(UNIT_CREATED_BY_SPELL), battle->playerPetLevel, battle->playerPetCurrentHp);
     }
 
     Creature* wild = GetMap()->GetCreature(battle->enemyGuid);
@@ -410,4 +451,82 @@ void Player::EndPetBattle(PetBattleEndReason reason)
 
     delete m_petBattle;
     m_petBattle = nullptr;
+}
+
+// Heal path 1 (ARCHITECTURE.md "Pet health & death" / Milestone step 6): a Pet Bandage item's
+// on-use effect (spell 64002, SpellEffects.cpp) fully heals the currently-summoned mini pet's
+// persisted battle HP. Doesn't touch the companion's real native Health/MaxHealth at all - those
+// are a separate, irrelevant stat outside of battle (see StartPetBattle/EndPetBattle's own
+// comments) - only the `character_pet_battle` record that governs its next fight.
+void Player::HealMiniPet()
+{
+    Pet* pet = GetMiniPet();
+    if (!pet || !sObjectMgr.GetPetBattleAbilities(pet->GetEntry()))
+    {
+        GetSession()->SendNotification("You don't have a companion out that needs healing.");
+        return;
+    }
+
+    uint32 summonSpellId = pet->GetUInt32Value(UNIT_CREATED_BY_SPELL);
+    uint32 level = pet->GetLevel();
+    uint32 currentHp = 0;
+    bool hasRecord = PetBattleCombat::LoadPetRecord(GetGUIDLow(), summonSpellId, level, currentHp);
+    uint32 maxHp = PetBattleCombat::MaxHp(level);
+    if (hasRecord && currentHp >= maxHp)
+    {
+        GetSession()->SendNotification("%s is already at full health.", pet->GetName());
+        return;
+    }
+
+    PetBattleCombat::SavePetRecord(GetGUIDLow(), summonSpellId, level, maxHp);
+    GetSession()->SendNotification("You used a Pet Bandage on %s.", pet->GetName());
+}
+
+// Heal path 2: the stable master's "1 silver x level" resurrect-all (ARCHITECTURE.md). Both halves
+// are exposed separately so the gossip handler (custom_creatures.cpp) can quote the exact cost
+// before charging it, and tell "nothing to heal" apart from "can't afford it" - `PerformResurrectAllPets`
+// re-does the (cheap, MyISAM) query rather than threading the first one's results through, since
+// gossip's two-click flow (quote, then confirm) would otherwise need to stash state between them.
+uint32 PetBattleCombat::DeadPetResurrectCost(Player* player)
+{
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `level` FROM `character_pet_battle` WHERE `guid` = %u AND `current_hp` = 0", player->GetGUIDLow()));
+    if (!result)
+        return 0;
+
+    uint32 totalCopper = 0;
+    do
+    {
+        totalCopper += result->Fetch()[0].GetUInt32() * 100; // 1 silver per level
+    }
+    while (result->NextRow());
+    return totalCopper;
+}
+
+uint32 PetBattleCombat::ResurrectAllPets(Player* player)
+{
+    std::unique_ptr<QueryResult> result(CharacterDatabase.PQuery(
+        "SELECT `summon_spell_id`, `level` FROM `character_pet_battle` WHERE `guid` = %u AND `current_hp` = 0", player->GetGUIDLow()));
+    if (!result)
+        return 0;
+
+    struct Dead { uint32 summonSpellId; uint32 level; };
+    std::vector<Dead> dead;
+    uint32 totalCopper = 0;
+    do
+    {
+        Field* fields = result->Fetch();
+        uint32 level = fields[1].GetUInt32();
+        dead.push_back({ fields[0].GetUInt32(), level });
+        totalCopper += level * 100;
+    }
+    while (result->NextRow());
+
+    if (dead.empty() || player->GetMoney() < totalCopper)
+        return 0;
+
+    player->ModifyMoney(-static_cast<int32>(totalCopper));
+    for (Dead const& d : dead)
+        SavePetRecord(player->GetGUIDLow(), d.summonSpellId, d.level, MaxHp(d.level));
+    return static_cast<uint32>(dead.size());
 }

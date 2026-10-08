@@ -13,6 +13,14 @@ uint32 PetBattleCombat::MaxHp(uint32 level)
     return 20 + level * 5;
 }
 
+uint32 PetBattleCombat::CaptureChance(uint32 playerPetLevel, uint32 enemyLevel)
+{
+    int32 diff = static_cast<int32>(playerPetLevel) - static_cast<int32>(enemyLevel);
+    int32 chance = 50 + diff * 10;
+    chance = std::max(5, std::min(95, chance));
+    return static_cast<uint32>(chance);
+}
+
 namespace
 {
     // The side that acts first each round (ARCHITECTURE.md: "the higher-level pet acts first each
@@ -232,4 +240,88 @@ void Player::StartPetBattle(Creature* wild)
         : m_petBattle->playerPetCurrentHp >= m_petBattle->enemyCurrentHp;
 
     GetSession()->SendPacket(std::move(packet));
+}
+
+// Capture (ARCHITECTURE.md step 5): usable mid-battle via its own targeted spell cast
+// (SpellEffects.cpp case 64001), not one of the three battle-ability slots, so a failed attempt
+// does not cost either side a round - the player can keep fighting or simply try again.
+void Player::TryCapturePet(Creature* wild)
+{
+    if (!m_petBattle || !wild || wild->GetObjectGuid() != m_petBattle->enemyGuid)
+        return; // only the pet you're actually fighting can be captured
+
+    uint32 captureSpellId = sObjectMgr.GetPetBattleCaptureSpell(wild->GetEntry());
+    if (!captureSpellId)
+    {
+        GetSession()->SendNotification("This critter can't be captured yet.");
+        return;
+    }
+
+    if (urand(1, 100) > PetBattleCombat::CaptureChance(m_petBattle->playerPetLevel, m_petBattle->enemyLevel))
+    {
+        GetSession()->SendNotification("The critter broke free!");
+        return;
+    }
+
+    if (!HasSpell(captureSpellId))
+        LearnSpell(captureSpellId, false);
+    GetSession()->SendNotification("You captured %s!", wild->GetName());
+
+    EndPetBattle(PetBattleEndReason::Captured);
+}
+
+// Shared teardown for every way a battle can end (round-resolved win/loss, or a successful
+// Capture) - factored out of what was originally only WorldSession::HandlePetBattleUseAbilityOpcode
+// so Capture's own end-of-battle path (above) doesn't duplicate it.
+void Player::EndPetBattle(PetBattleEndReason reason)
+{
+    PetBattleSession* battle = m_petBattle;
+    if (!battle)
+        return;
+
+    auto end = std::make_unique<WorldPackets::PetBattle::BattleEnd>();
+    end->playerWon = reason != PetBattleEndReason::PlayerLost;
+    GetSession()->SendPacket(std::move(end));
+
+    // Hand movement and regen back to the player's pet (always alive) - StartPetBattle froze both
+    // to stop it following its owner and borrowed its real Health/MaxHealth to show the battle's
+    // HP on its own health bar, both restored here regardless of how the battle ended.
+    Pet* pet = GetMap()->GetPet(battle->playerPetGuid);
+    if (pet)
+    {
+        pet->GetMotionMaster()->Initialize();
+        pet->AddCreatureState(CSTATE_REGEN_HEALTH);
+        pet->SetMaxHealth(battle->playerPetOriginalMaxHp);
+        pet->SetHealth(battle->playerPetOriginalHp);
+    }
+
+    Creature* wild = GetMap()->GetCreature(battle->enemyGuid);
+    if (wild)
+    {
+        switch (reason)
+        {
+            case PetBattleEndReason::PlayerWon:
+                // A real death, not a restore: Kill() handles the death animation, despawn/respawn
+                // timer and whatever else a normal kill does, none of which "set HP back to what it
+                // was" would - that path is only correct for the wild critter winning, below.
+                wild->Kill(wild, nullptr);
+                break;
+            case PetBattleEndReason::Captured:
+                // No death - the critter simply vanishes into its new owner's pocket. ForcedDespawn
+                // briefly flips through the engine's normal death state to remove it cleanly (same
+                // call plenty of other "just disappear" scripted despawns already use), then lets
+                // it respawn on its usual timer, same as any other wild critter that wanders off.
+                wild->ForcedDespawn();
+                break;
+            case PetBattleEndReason::PlayerLost:
+                wild->GetMotionMaster()->Initialize();
+                wild->AddCreatureState(CSTATE_REGEN_HEALTH);
+                wild->SetMaxHealth(battle->enemyOriginalMaxHp);
+                wild->SetHealth(battle->enemyOriginalHp);
+                break;
+        }
+    }
+
+    delete m_petBattle;
+    m_petBattle = nullptr;
 }

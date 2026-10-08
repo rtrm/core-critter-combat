@@ -345,6 +345,14 @@ void Spell::EffectDummy(SpellEffectIndex effIdx)
                         player->StartPetBattle(wild);
                     return;
                 }
+                case 64001: // Critter Combat: Capture Critter (critter-combat ARCHITECTURE.md step 5)
+                {
+                    Player* player = m_casterUnit ? m_casterUnit->ToPlayer() : nullptr;
+                    Creature* wild = unitTarget ? unitTarget->ToCreature() : nullptr;
+                    if (player && wild)
+                        player->TryCapturePet(wild);
+                    return;
+                }
                 case 20863: // Muglash's Brazier Trap
                 {
                     if (unitTarget && unitTarget->IsCreature())

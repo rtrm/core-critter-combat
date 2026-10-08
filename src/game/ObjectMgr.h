@@ -1451,9 +1451,17 @@ class ObjectMgr
         {
             return m_PetBattleWild.count(creatureEntry) != 0;
         }
+        // The companion Summon spell a successful Capture against this wild creature_template
+        // grants (e.g. 60023 "Summon Companion: Prairie Dog" for wild entry 2620) - 0 if this
+        // wild species has none authored yet (step 5 content, same gap class as abilities/step 4).
+        uint32 GetPetBattleCaptureSpell(uint32 creatureEntry) const
+        {
+            auto itr = m_PetBattleWild.find(creatureEntry);
+            return itr != m_PetBattleWild.end() ? itr->second : 0;
+        }
         PetBattleAbilityMap m_PetBattleAbilities;
         PetBattleSpeciesAbilityMap m_PetBattleSpeciesAbilities;
-        std::set<uint32> m_PetBattleWild;
+        std::unordered_map<uint32, uint32> m_PetBattleWild; // wild entry -> capture_spell_id
 
         // Changes of faction
         typedef std::map<uint32, uint32> CharacterConversionMap;

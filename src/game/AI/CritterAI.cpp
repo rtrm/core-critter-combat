@@ -38,17 +38,19 @@ void CritterAI::DamageTaken(Unit* pWho, uint32& uiDamage)
     }
 }
 
-// Critter Combat (see the critter-combat repo's ARCHITECTURE.md): Engage Critter Combat, whose
-// SPELL_EFFECT_DUMMY starts a pet battle. It deals no damage and isn't flagged positive, so
-// without this it reads to SpellHit below as exactly the kind of hostile poke a critter should
-// flee from - and does, even though Player::StartPetBattle (PetBattleCombat.cpp) already froze
-// this creature's movement by the time this runs: AI::SpellHit fires after effect processing, so
-// the flee it would otherwise queue here overrides that freeze within the same hit.
+// Critter Combat (see the critter-combat repo's ARCHITECTURE.md): Engage Critter Combat and
+// Capture Critter, whose SPELL_EFFECT_DUMMY starts/resolves a pet battle. Both deal no damage and
+// aren't flagged positive, so without this they read to SpellHit below as exactly the kind of
+// hostile poke a critter should flee from - and did, even though Player::StartPetBattle
+// (PetBattleCombat.cpp) already froze this creature's movement by the time this runs: AI::SpellHit
+// fires after effect processing, so the flee it would otherwise queue here overrides that freeze
+// within the same hit.
 #define SPELL_ENGAGE_CRITTER_COMBAT 64000
+#define SPELL_CAPTURE_CRITTER 64001
 
 void CritterAI::SpellHit(SpellCaster* pCaster, SpellEntry const* pSpell)
 {
-    if (pSpell->Id == SPELL_ENGAGE_CRITTER_COMBAT)
+    if (pSpell->Id == SPELL_ENGAGE_CRITTER_COMBAT || pSpell->Id == SPELL_CAPTURE_CRITTER)
         return;
 
     if (!pSpell->IsPositiveSpell() && !pSpell->IsDirectDamageSpell() && m_creature->IsAlive())

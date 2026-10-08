@@ -28,6 +28,11 @@ namespace PetBattleCombat
         bool playerWon = false; // only meaningful when battleOver
     };
     RoundOutcome ResolveRound(PetBattleSession& session, uint32 playerAbilityId);
+
+    // Percent chance (1-100) a Capture attempt succeeds, keyed off the enemy's level relative to
+    // the player's own pet (ARCHITECTURE.md step 5) - 50% at an even match, +/-10% per level of
+    // difference, clamped so no matchup is ever a guaranteed catch or a flatly impossible one.
+    uint32 CaptureChance(uint32 playerPetLevel, uint32 enemyLevel);
 }
 
 #endif // MANGOS_PET_BATTLE_COMBAT_H

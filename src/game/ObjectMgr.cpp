@@ -11699,7 +11699,7 @@ void ObjectMgr::LoadPetBattleSpeciesAbilities()
 void ObjectMgr::LoadPetBattleWild()
 {
     m_PetBattleWild.clear();
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry` FROM `pet_battle_wild`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `entry`, `capture_spell_id` FROM `pet_battle_wild`"));
 
     if (!result)
     {
@@ -11719,7 +11719,7 @@ void ObjectMgr::LoadPetBattleWild()
         bar.step();
         Field* fields = result->Fetch();
 
-        m_PetBattleWild.insert(fields[0].GetUInt32());
+        m_PetBattleWild[fields[0].GetUInt32()] = fields[1].GetUInt32();
         ++count;
     }
     while (result->NextRow());

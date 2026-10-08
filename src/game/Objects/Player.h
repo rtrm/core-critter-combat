@@ -274,6 +274,15 @@ struct PetBattleSession
     uint32 enemyOriginalHp = 0;
 };
 
+// How a pet battle ended, driving the one piece of cleanup that differs by outcome: what happens
+// to the wild critter (killed, captured/despawned, or handed back to its own AI unharmed).
+enum class PetBattleEndReason : uint8
+{
+    PlayerWon,
+    PlayerLost,
+    Captured
+};
+
 struct Areas
 {
     uint32 areaID = 0;
@@ -2248,6 +2257,8 @@ class Player final: public Unit
         // PetBattleCombat.cpp, not Player.cpp, alongside the rest of the battle engine.
         PetBattleSession* m_petBattle = nullptr;
         void StartPetBattle(Creature* wild);
+        void TryCapturePet(Creature* wild);
+        void EndPetBattle(PetBattleEndReason reason);
 
         void RewardHonor(Unit const* pVictim, uint32 groupSize);
         void RewardHonorOnDeath();

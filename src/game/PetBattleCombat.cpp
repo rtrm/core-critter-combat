@@ -165,12 +165,16 @@ void Player::StartPetBattle(Creature* wild)
     }
 
     // "No camera change... the two pets simply position themselves facing each other" (ARCHITECTURE.md).
-    // Clear()+MoveIdle() on both: the wild critter's own flee-on-hostile-spell reaction is handled
-    // separately (CritterAI::SpellHit special-cases spell 64000), but the player's pet would
-    // otherwise keep following its owner, so it still needs freezing here.
-    pet->GetMotionMaster()->Clear();
+    // Clear(true, true)+MoveIdle() on both: the wild critter's own flee-on-hostile-spell reaction
+    // is handled separately (CritterAI::SpellHit special-cases spell 64000), but its default
+    // ambient wander still needs stopping, same as the player's pet otherwise following its owner.
+    // Clear()'s own default args (`all=false`) leave the *bottom* movement generator on the stack
+    // untouched - only one layer below MoveIdle's push, so the creature's base wander could still
+    // resurface (e.g. if anything else calls a plain Clear() on it mid-battle and pops idle back
+    // off); `all=true` wipes the whole stack so there is nothing left for idle to sit on top of.
+    pet->GetMotionMaster()->Clear(true, true);
     pet->GetMotionMaster()->MoveIdle();
-    wild->GetMotionMaster()->Clear();
+    wild->GetMotionMaster()->Clear(true, true);
     wild->GetMotionMaster()->MoveIdle();
     pet->SetFacingToObject(wild);
     wild->SetFacingToObject(pet);

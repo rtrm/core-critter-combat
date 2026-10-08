@@ -1422,6 +1422,9 @@ class ObjectMgr
         {
             uint32 id;
             std::string name;
+            // Bare `Interface\Icons\` basename, client-prepended - same convention as every other
+            // icon column in this core.
+            std::string icon;
             uint8 effectType; // 1 DAMAGE, 2 HIT_CHANCE_DEBUFF (enemy), 3 DAMAGE_TAKEN_SHIELD (self)
             float baseValue;
             float valuePerLevel;

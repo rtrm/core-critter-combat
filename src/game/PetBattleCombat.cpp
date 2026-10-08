@@ -135,6 +135,7 @@ static void FillAbility(WorldPackets::PetBattle::AbilityInfo& out, uint32 abilit
     ObjectMgr::PetBattleAbility const* ability = sObjectMgr.GetPetBattleAbility(abilityId);
     out.id = ability ? ability->id : 0;
     out.name = ability ? ability->name : "";
+    out.icon = ability ? ability->icon : "";
     out.effectType = ability ? ability->effectType : 0;
 }
 
@@ -164,6 +165,16 @@ void Player::StartPetBattle(Creature* wild)
     }
 
     // "No camera change... the two pets simply position themselves facing each other" (ARCHITECTURE.md).
+    // Clear()+MoveIdle() on both: the wild critter's own CritterAI::SpellHit just queued a 30s
+    // flee from the Engage Critter Combat cast itself (any non-positive, non-direct-damage spell
+    // hit triggers it - true of our placeholder-effect spell even though it deals no damage), and
+    // the player's pet would otherwise keep following its owner. Nothing else re-triggers either
+    // during the fight: in-battle ability effects move HP directly on the session, never through
+    // Unit::DealDamage/SpellHit, so there is no further real hit for CritterAI to react to.
+    pet->GetMotionMaster()->Clear();
+    pet->GetMotionMaster()->MoveIdle();
+    wild->GetMotionMaster()->Clear();
+    wild->GetMotionMaster()->MoveIdle();
     pet->SetFacingToObject(wild);
     wild->SetFacingToObject(pet);
 
@@ -183,6 +194,17 @@ void Player::StartPetBattle(Creature* wild)
     m_petBattle->enemyCurrentHp = m_petBattle->enemyMaxHp;
     for (uint8 i = 0; i < 3; ++i)
         m_petBattle->enemyAbilityIds[i] = (*enemyAbilityIds)[i];
+
+    // The battle's HP lives on each combatant's own real health bar, not a custom UI - save their
+    // actual Health/MaxHealth to restore exactly at battle end, then overwrite with battle values.
+    m_petBattle->playerPetOriginalMaxHp = pet->GetMaxHealth();
+    m_petBattle->playerPetOriginalHp = pet->GetHealth();
+    m_petBattle->enemyOriginalMaxHp = wild->GetMaxHealth();
+    m_petBattle->enemyOriginalHp = wild->GetHealth();
+    pet->SetMaxHealth(m_petBattle->playerPetMaxHp);
+    pet->SetHealth(m_petBattle->playerPetCurrentHp);
+    wild->SetMaxHealth(m_petBattle->enemyMaxHp);
+    wild->SetHealth(m_petBattle->enemyCurrentHp);
 
     auto packet = std::make_unique<WorldPackets::PetBattle::BattleStart>();
     packet->playerPetName = pet->GetName();

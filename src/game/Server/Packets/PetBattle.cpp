@@ -10,13 +10,15 @@ void WorldPackets::PetBattle::UseAbility::ReadFromWorldPacket(WorldPacket& recv_
 static size_t EstimateAbilitySize(WorldPackets::PetBattle::AbilityInfo const& ability)
 {
     return sizeof(ability.id) + sizeof(ability.effectType) +
-           ability.name.size() + sizeof(char); // null terminator
+           ability.name.size() + sizeof(char) + // null terminator
+           ability.icon.size() + sizeof(char); // null terminator
 }
 
 static void AppendAbility(ByteBuffer& buffer, WorldPackets::PetBattle::AbilityInfo const& ability)
 {
     buffer << ability.id;
     buffer << ability.name;
+    buffer << ability.icon;
     buffer << ability.effectType;
 }
 

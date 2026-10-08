@@ -11618,7 +11618,7 @@ void ObjectMgr::RemoveGraveYardLink(uint32 id, uint32 zoneId, Team team, bool in
 void ObjectMgr::LoadPetBattleAbilities()
 {
     m_PetBattleAbilities.clear();
-    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `name`, `effect_type`, `base_value`, `value_per_level` FROM `pet_battle_ability`"));
+    std::unique_ptr<QueryResult> result(WorldDatabase.Query("SELECT `id`, `name`, `icon`, `effect_type`, `base_value`, `value_per_level` FROM `pet_battle_ability`"));
 
     if (!result)
     {
@@ -11641,9 +11641,10 @@ void ObjectMgr::LoadPetBattleAbilities()
         PetBattleAbility ability;
         ability.id = fields[0].GetUInt32();
         ability.name = fields[1].GetCppString();
-        ability.effectType = fields[2].GetUInt8();
-        ability.baseValue = fields[3].GetFloat();
-        ability.valuePerLevel = fields[4].GetFloat();
+        ability.icon = fields[2].GetCppString();
+        ability.effectType = fields[3].GetUInt8();
+        ability.baseValue = fields[4].GetFloat();
+        ability.valuePerLevel = fields[5].GetFloat();
 
         m_PetBattleAbilities[ability.id] = ability;
         ++count;

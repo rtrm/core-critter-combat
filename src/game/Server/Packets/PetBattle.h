@@ -16,6 +16,8 @@ namespace WorldPackets { namespace PetBattle
     {
         uint32 id = 0;
         std::string name;
+        /// Bare `Interface\Icons\` basename; the client prepends the folder.
+        std::string icon;
         uint8 effectType = 0; // 1 DAMAGE, 2 HIT_CHANCE_DEBUFF (enemy), 3 DAMAGE_TAKEN_SHIELD (self)
     };
 

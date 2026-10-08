@@ -258,6 +258,10 @@ struct PetBattleSession
     // chance (from the other side's HIT_CHANCE_DEBUFF) is rolled against this side's next action.
     uint32 playerPendingShield = 0;
     uint32 playerPendingMissChance = 0;
+    // The pet's real Health/MaxHealth from just before the battle overwrote them to show battle
+    // HP on its actual health bar - restored exactly at battle end.
+    uint32 playerPetOriginalMaxHp = 0;
+    uint32 playerPetOriginalHp = 0;
 
     ObjectGuid enemyGuid;
     uint32 enemyLevel = 0;
@@ -266,6 +270,8 @@ struct PetBattleSession
     uint32 enemyAbilityIds[3] = { 0, 0, 0 };
     uint32 enemyPendingShield = 0;
     uint32 enemyPendingMissChance = 0;
+    uint32 enemyOriginalMaxHp = 0;
+    uint32 enemyOriginalHp = 0;
 };
 
 struct Areas

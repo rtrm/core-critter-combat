@@ -29,10 +29,31 @@ namespace PetBattleCombat
     };
     RoundOutcome ResolveRound(PetBattleSession& session, uint32 playerAbilityId);
 
-    // Percent chance (1-100) a Capture attempt succeeds, keyed off the enemy's level relative to
-    // the player's own pet (ARCHITECTURE.md step 5) - 50% at an even match, +/-10% per level of
-    // difference, clamped so no matchup is ever a guaranteed catch or a flatly impossible one.
-    uint32 CaptureChance(uint32 playerPetLevel, uint32 enemyLevel);
+    // Percent chance (0-95) a Capture attempt succeeds (ARCHITECTURE.md step 5, tuned against live
+    // feedback). Gated hard on the enemy's current HP: above 50% it's not attemptable at all (the
+    // caller should never even roll - see Player::TryCapturePet), 21-50% is a low fixed chance,
+    // and only below 20% does it become likely. Level difference is deliberately asymmetric:
+    // fighting something above your own pet's level punishes hard (-20%/level), while fighting
+    // something below it only helps a little (+5%/level) - every number here is still a pilot
+    // placeholder, not a balanced value.
+    uint32 CaptureChance(uint32 playerPetLevel, uint32 enemyLevel, uint32 enemyHpPercent);
+
+    // One full round of a Capture attempt: same turn order rule as ResolveRound (higher level
+    // first, current HP tiebreak), but the player's "move" is the catch attempt itself rather than
+    // one of the three battle abilities. A miss still costs the round - if the enemy acts (because
+    // it went first, or because the player's attempt failed and it was their own turn next), it
+    // can still land a hit - so Capture can't be spammed for free. `captureChancePercent` is
+    // resolved by the caller (CaptureChance, above), since computing it here would need the
+    // enemy's max HP too, which this engine's other entry points don't otherwise pass around.
+    struct CaptureOutcome
+    {
+        bool captured = false;
+        uint32 enemyAbilityUsed = 0; // 0 if the enemy never got to act this round
+        bool playerActedFirst = true;
+        bool battleOver = false; // only set on a loss - a capture ends the battle via `captured` instead
+        bool playerWon = false;  // only meaningful when battleOver
+    };
+    CaptureOutcome ResolveCaptureRound(PetBattleSession& session, uint32 captureChancePercent);
 }
 
 #endif // MANGOS_PET_BATTLE_COMBAT_H

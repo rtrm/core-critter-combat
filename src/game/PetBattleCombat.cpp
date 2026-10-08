@@ -13,11 +13,20 @@ uint32 PetBattleCombat::MaxHp(uint32 level)
     return 20 + level * 5;
 }
 
-uint32 PetBattleCombat::CaptureChance(uint32 playerPetLevel, uint32 enemyLevel)
+uint32 PetBattleCombat::CaptureChance(uint32 playerPetLevel, uint32 enemyLevel, uint32 enemyHpPercent)
 {
+    int32 chance;
+    if (enemyHpPercent <= 20)
+        chance = 70;
+    else if (enemyHpPercent <= 50)
+        chance = 15;
+    else
+        return 0; // too healthy to attempt at all
+
     int32 diff = static_cast<int32>(playerPetLevel) - static_cast<int32>(enemyLevel);
-    int32 chance = 50 + diff * 10;
-    chance = std::max(5, std::min(95, chance));
+    chance += diff < 0 ? diff * 20 : diff * 5;
+
+    chance = std::max(0, std::min(95, chance));
     return static_cast<uint32>(chance);
 }
 
@@ -138,6 +147,51 @@ PetBattleCombat::RoundOutcome PetBattleCombat::ResolveRound(PetBattleSession& s,
     return outcome;
 }
 
+PetBattleCombat::CaptureOutcome PetBattleCombat::ResolveCaptureRound(PetBattleSession& s, uint32 captureChancePercent)
+{
+    CaptureOutcome outcome;
+    outcome.playerActedFirst = PlayerActsFirst(s);
+
+    auto enemyActs = [&]
+    {
+        uint32 enemyAbilityId = s.enemyAbilityIds[urand(0, 2)];
+        outcome.enemyAbilityUsed = enemyAbilityId;
+        ApplyAbility(s, enemyAbilityId, false);
+    };
+    auto attemptCapture = [&]
+    {
+        return captureChancePercent > 0 && urand(1, 100) <= captureChancePercent;
+    };
+
+    if (outcome.playerActedFirst)
+    {
+        if (attemptCapture())
+        {
+            outcome.captured = true;
+            return outcome;
+        }
+        enemyActs();
+        if (s.playerPetCurrentHp == 0)
+        {
+            outcome.battleOver = true;
+            outcome.playerWon = false;
+        }
+    }
+    else
+    {
+        enemyActs();
+        if (s.playerPetCurrentHp == 0)
+        {
+            outcome.battleOver = true;
+            outcome.playerWon = false;
+            return outcome;
+        }
+        if (attemptCapture())
+            outcome.captured = true;
+    }
+    return outcome;
+}
+
 static void FillAbility(WorldPackets::PetBattle::AbilityInfo& out, uint32 abilityId)
 {
     ObjectMgr::PetBattleAbility const* ability = sObjectMgr.GetPetBattleAbility(abilityId);
@@ -243,8 +297,10 @@ void Player::StartPetBattle(Creature* wild)
 }
 
 // Capture (ARCHITECTURE.md step 5): usable mid-battle via its own targeted spell cast
-// (SpellEffects.cpp case 64001), not one of the three battle-ability slots, so a failed attempt
-// does not cost either side a round - the player can keep fighting or simply try again.
+// (SpellEffects.cpp case 64001), not one of the three battle-ability slots - but still costs a
+// full round via ResolveCaptureRound, same as choosing a weak ability would, so it can't be
+// spammed for free (live feedback: a miss needs a meaningful penalty). Above 50% enemy HP there's
+// no real attempt to roll at all, so that rejection alone doesn't cost a round either.
 void Player::TryCapturePet(Creature* wild)
 {
     if (!m_petBattle || !wild || wild->GetObjectGuid() != m_petBattle->enemyGuid)
@@ -257,17 +313,47 @@ void Player::TryCapturePet(Creature* wild)
         return;
     }
 
-    if (urand(1, 100) > PetBattleCombat::CaptureChance(m_petBattle->playerPetLevel, m_petBattle->enemyLevel))
+    PetBattleSession& battle = *m_petBattle;
+    uint32 enemyHpPercent = battle.enemyMaxHp ? battle.enemyCurrentHp * 100 / battle.enemyMaxHp : 0;
+    if (enemyHpPercent > 50)
     {
-        GetSession()->SendNotification("The critter broke free!");
+        GetSession()->SendNotification("%s is still too healthy to capture - wear it down first.", wild->GetName());
         return;
     }
 
-    if (!HasSpell(captureSpellId))
-        LearnSpell(captureSpellId, false);
-    GetSession()->SendNotification("You captured %s!", wild->GetName());
+    uint32 chance = PetBattleCombat::CaptureChance(battle.playerPetLevel, battle.enemyLevel, enemyHpPercent);
+    PetBattleCombat::CaptureOutcome outcome = PetBattleCombat::ResolveCaptureRound(battle, chance);
 
-    EndPetBattle(PetBattleEndReason::Captured);
+    // Only the player's pet can take a hit from this round (the enemy's own HP never changes from
+    // a catch attempt), but sync it to its real health bar same as every other round does.
+    if (Pet* pet = GetMiniPet())
+        pet->SetHealth(battle.playerPetCurrentHp);
+
+    auto update = std::make_unique<WorldPackets::PetBattle::BattleUpdate>();
+    update->playerAbilityId = 0; // no battle ability was used - this round's "move" was the catch attempt
+    update->enemyAbilityId = outcome.enemyAbilityUsed;
+    update->playerActedFirst = outcome.playerActedFirst;
+    update->playerPetCurrentHp = battle.playerPetCurrentHp;
+    update->enemyCurrentHp = battle.enemyCurrentHp;
+    GetSession()->SendPacket(std::move(update));
+
+    if (outcome.captured)
+    {
+        if (!HasSpell(captureSpellId))
+            LearnSpell(captureSpellId, false);
+        GetSession()->SendNotification("You captured %s!", wild->GetName());
+        EndPetBattle(PetBattleEndReason::Captured);
+        return;
+    }
+
+    if (outcome.battleOver)
+    {
+        GetSession()->SendNotification("The critter broke free, and your pet couldn't take another hit!");
+        EndPetBattle(PetBattleEndReason::PlayerLost);
+        return;
+    }
+
+    GetSession()->SendNotification("The critter broke free!");
 }
 
 // Shared teardown for every way a battle can end (round-resolved win/loss, or a successful
